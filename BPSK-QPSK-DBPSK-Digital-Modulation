@@ -1,0 +1,221 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# =====================================================
+# 1. NORMALIZED BPSK
+# =====================================================
+
+def bpsk_mapper(bits):
+    return 1 - 2 * np.array(bits)
+
+
+def bpsk_demapper(symbols):
+    return (np.real(symbols) < 0).astype(int)
+
+
+# =====================================================
+# 2. GRAY-CODED QPSK
+# =====================================================
+
+def qpsk_mapper(bits):
+    bits = np.array(bits).reshape(-1, 2)
+
+    I = 1 - 2 * bits[:, 0]
+    Q = 1 - 2 * bits[:, 1]
+
+    return (I + 1j * Q) / np.sqrt(2)
+
+
+def qpsk_demapper(symbols):
+    bits_I = (np.real(symbols) < 0).astype(int)
+    bits_Q = (np.imag(symbols) < 0).astype(int)
+
+    return np.column_stack((bits_I, bits_Q)).flatten()
+
+
+# =====================================================
+# 3. DIFFERENTIAL BPSK
+# =====================================================
+
+def dbpsk_mapper(bits):
+    bits = np.array(bits)
+
+    symbols = np.zeros(len(bits) + 1, dtype=complex)
+
+    # Initial reference symbol
+    symbols[0] = 1
+
+    for k in range(len(bits)):
+        if bits[k] == 0:
+            symbols[k + 1] = symbols[k]
+        else:
+            symbols[k + 1] = -symbols[k]
+
+    return symbols
+
+
+def dbpsk_demapper(received):
+    differential_symbols = (
+        received[1:] * np.conj(received[:-1])
+    )
+
+    return (np.real(differential_symbols) < 0).astype(int)
+
+
+# =====================================================
+# 4. APPLY CARRIER PHASE OFFSET
+# =====================================================
+
+def apply_phase_offset(symbols, phase_degrees):
+    phase = np.deg2rad(phase_degrees)
+
+    return symbols * np.exp(1j * phase)
+
+
+# =====================================================
+# 5. GENERATE RANDOM BITS
+# =====================================================
+
+np.random.seed(42)
+
+N = 10000
+
+bits_bpsk = np.random.randint(0, 2, N)
+
+bits_qpsk = np.random.randint(0, 2, 2 * N)
+
+bits_dbpsk = np.random.randint(0, 2, N)
+
+
+# =====================================================
+# 6. MODULATION
+# =====================================================
+
+tx_bpsk = bpsk_mapper(bits_bpsk)
+
+tx_qpsk = qpsk_mapper(bits_qpsk)
+
+tx_dbpsk = dbpsk_mapper(bits_dbpsk)
+
+
+# =====================================================
+# 7. PHASE OFFSET SIMULATION
+# =====================================================
+
+phase_offsets = [0, 30, 45, 60, 90, 135, 180]
+
+ber_bpsk = []
+ber_qpsk = []
+ber_dbpsk = []
+
+for phase in phase_offsets:
+
+    # Apply carrier phase offset
+    rx_bpsk = apply_phase_offset(tx_bpsk, phase)
+
+    rx_qpsk = apply_phase_offset(tx_qpsk, phase)
+
+    rx_dbpsk = apply_phase_offset(tx_dbpsk, phase)
+
+    # Coherent detection assumes zero phase offset
+    detected_bpsk = bpsk_demapper(rx_bpsk)
+
+    detected_qpsk = qpsk_demapper(rx_qpsk)
+
+    # Differential detection
+    detected_dbpsk = dbpsk_demapper(rx_dbpsk)
+
+    # Calculate BER
+    ber_bpsk.append(
+        np.mean(bits_bpsk != detected_bpsk)
+    )
+
+    ber_qpsk.append(
+        np.mean(bits_qpsk != detected_qpsk)
+    )
+
+    ber_dbpsk.append(
+        np.mean(bits_dbpsk != detected_dbpsk)
+    )
+
+
+# =====================================================
+# 8. DISPLAY RESULTS
+# =====================================================
+
+print("\nCARRIER PHASE OFFSET RESULTS")
+print("---------------------------------------------")
+print("Phase    BPSK       QPSK       DBPSK")
+print("---------------------------------------------")
+
+for i, phase in enumerate(phase_offsets):
+    print(
+        f"{phase:3d}°   "
+        f"{ber_bpsk[i]:.4f}     "
+        f"{ber_qpsk[i]:.4f}     "
+        f"{ber_dbpsk[i]:.4f}"
+    )
+
+
+# =====================================================
+# 9. BER VS PHASE OFFSET GRAPH
+# =====================================================
+
+plt.figure(figsize=(9, 5))
+
+plt.plot(phase_offsets, ber_bpsk,
+         'o-', label='BPSK')
+
+plt.plot(phase_offsets, ber_qpsk,
+         's-', label='Gray-coded QPSK')
+
+plt.plot(phase_offsets, ber_dbpsk,
+         '^-', label='DBPSK')
+
+plt.xlabel("Carrier Phase Offset (Degrees)")
+plt.ylabel("Bit Error Rate (BER)")
+
+plt.title("Effect of Carrier Phase Offset on Digital Modulation")
+
+plt.grid(True)
+plt.legend()
+plt.ylim(-0.05, 1.05)
+plt.show()
+
+
+# =====================================================
+# 10. CONSTELLATION DIAGRAMS
+# =====================================================
+
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+
+# BPSK
+axes[0].scatter(np.real(tx_bpsk[:100]),
+                np.imag(tx_bpsk[:100]))
+
+axes[0].set_title("Normalized BPSK")
+axes[0].set_xlabel("In-phase")
+axes[0].set_ylabel("Quadrature")
+
+# QPSK
+axes[1].scatter(np.real(tx_qpsk[:100]),
+                np.imag(tx_qpsk[:100]))
+
+axes[1].set_title("Gray-coded QPSK")
+axes[1].set_xlabel("In-phase")
+axes[1].set_ylabel("Quadrature")
+
+# DBPSK
+axes[2].scatter(np.real(tx_dbpsk[:100]),
+                np.imag(tx_dbpsk[:100]))
+
+axes[2].set_title("DBPSK")
+axes[2].set_xlabel("In-phase")
+axes[2].set_ylabel("Quadrature")
+
+for ax in axes:
+    ax.grid(True)
+    ax.set_aspect('equal', adjustable='box')
+
+plt.tight_layout()
+plt.show()
